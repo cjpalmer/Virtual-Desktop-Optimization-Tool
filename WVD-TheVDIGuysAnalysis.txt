@@ -1,0 +1,117 @@
+﻿VDIGuys - Analysis
+Supports 1909 and 2004 versions currently
+AppxPackages.json
+	Performs the following tasks for each item:
+		Remove-AppxPackage
+			This removes the current installation
+		Remove-AppxProvisionedPackage
+			This will prevent it reinstalling for each new user
+	Removes the following:
+		Microsoft.OneConnect
+		Microsoft.MSPaint - Do we need to keep this or should we publish this as a RemoteApp?
+		Microsoft.BingWeather
+		Microsoft.GetHelp
+		Microsoft.GetStarted
+		Microsoft.Messaging
+		Microsoft.MicrosoftOfficeHub - Will this break anything of ours?
+		Microsoft.MicrosoftSolitaireCollection - Oh, this is critical to keep...
+		Microsoft.MicrosoftStickyNotes - Do some of our users use this?
+		Microsoft.Office.OneNote - I think this one probably needs to stay
+		Microsoft.People
+		Microsoft.Print3D
+		Microsoft.SkypeApp - Does this affect Teams in anyway?
+		Microsoft.Wallet
+		Microsoft.Windows.Photos - Do we need this for our users to look at anything?
+		Microsoft.WindowsAlarms
+		Microsoft.WindowsCalculator - Should we keep this?
+		Microsoft.WindowsCamera
+		Microsoft.WindowsCommunicationApps
+		Microsoft.WindowsFeedbackHub
+		Microsoft.WindowsMaps
+		Microsoft.Xbox.TCUI
+		Microsoft.XboxApp
+		Microsoft.XboxGameOverlay
+		Microsoft.XboxGamingOverlay
+		Microsoft.XboxIdentityProvider
+		Microsoft.XboxSpeechToTextOverlay
+		Microsoft.YourPhone
+		Microsoft.ZuneMusic
+		Microsoft.ZuneVideo
+		Microsoft.WindowsSoundRecorder - Is this something we need to keep?
+		Microsoft.ScreenSketch - What about this?
+		Microsoft.MixedReality.Portal
+		Microsoft.Microsoft3DViewer
+			This is actually listed twice but named Microsoft.OneConnect at the bottom of the file.
+ISSUE: AppxPackages.json. Duplicate Entry for Microsoft.OneConnect which seems to have guts of Microsoft.Microsoft3DViewer
+
+AutoLoggers.json
+	Performs the following for each entry in file:
+		New-ItemProperty and sets Start to 0 which effectively disables the task from running
+	I don't see anything that I am concerned about in this one. Primarily is it disabling diagnostics for Wifi and Phone related features.
+
+DefaultUserSettings.txt
+	This is mounting the NTUSER.DAT in the C:\Users\Default folder and then customizing some settings
+	It then runs each line predicated with C:\Windows\System32\Reg.exe
+	It is setting some default Explorer states and settings (disabling some stuff and enabling others)
+	Also minimizing graphically rich screens to optimize the fact this is RDP (reducing memory and processor footprint to maximize users on a host)
+	It disables automatic background running for some unnecessarily chatty items?
+	Sets the last setting three times... Typo cleanup
+		Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement" /v ScoobeSystemSettingEnabled
+			UserProfileEngagement folder doesn't exist to create the key in... and it is trying to do it three times
+ISSUE: DefaultUserSettings.txt has the same entry 3 times:
+ISSUE: add "HKLM\Temp\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement" /v ScoobeSystemSettingEnabled /t REG_DWORD /d 0 /f
+ISSUE: While I agree this is a good setting to set in the Default user profile, I am wondering why it is doing it three times
+
+REQUEST:
+Add the following to DefaultUserSettings.txt to make Explorer default to This PC instead of Quick Access:
+add "HKLM\Temp\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo /t REG_DWORD /d 1 /f
+
+
+ScheduledTasks.json
+	Disables scheduled tasks that normally run by default
+	Performs the following for each entry:
+		Disable-ScheduledTask
+	Disables a bunch of Customer Experience reporting as well as background maintenance that isn't really necessary in a VDI environment
+
+Services.json
+	Disables services that are not useful in a VDI environment
+	Performs the following on the services listed:
+		Stop-Service -Force
+		Set-Service -StartupType Disabled
+	CaptureService - screen capture for Windows.Graphics.Capture API?
+
+LGPO settings
+	There are two Registry.POL files (one for User and one for Machine)
+	Uses LGPO.exe to import the User and Computer registry.pol file into the local group policy store
+	You can review the settings with SDM Registry Policy Viewer
+
+
+Additional items done in the main script:
+	Sets following keys in HKLM:\System\CurrentControlSet\Services\LanmanWorkstation\Parameters\
+		DisableBandwidthThrottling - DWord 1
+		FileInfoCacheEntriesMax - DWord 1024
+		DirectoryCacheEntriesMax - DWord 1024
+		FileNotFoundCacheEntriesMax - DWord 1024
+		DormantFileLimit - Dword 256
+	Sets the 'Send Buffer Size' for the adapter to 4MB
+		Set-NetAdapterAdvancedProperty -DisplayName "Send Buffer Size" -DisplayValue 4MB
+	Cleans up various file types anywhere on the disk:
+		*.tmp, *.dmp, *.etl, *.evtx, thumbcache*.db, *.log
+	Cleans up the C:\ProgramData\Microsoft\Windows\RetailDemo folder
+		Exists on my machine but is just empty directories
+	Cleans up C:\Windows\Temp of files not in use
+	Cleans up Windows Error Reporting files from ProgramData
+	Cleans up %TEMP% ($env:TEMP) of any files that are not in use
+	Runs Clear-RecycleBin to empty the recycle bins
+	Runs Clear-BCCache to clear the BranchCache cache
+	NOTE: Doesn't run the Disk Cleanup Wizard because it has been deprecated
+	Prompts for a reboot
+
+On test VM, I downloaded and edited for the two issues above and then ran it as default otherwise.
+Got an error when trying to set Start = 0 for HKLM:\SYSTEM\CurrentControlSet\Control\WMI\Autologger\RadioMgr\
+	Error:
+New-ItemProperty : Requested registry access is not allowed.
+At C:\Windows_10_VDI_Optimize\Win10_VirtualDesktop_Optimize.ps1:158 char:9   
+	Checked the registry path and there is a Start key with a value of 1 already. I don't know if that was there already and that is why it failed or not
+		I was unable to change the value through the GUI as well
+
